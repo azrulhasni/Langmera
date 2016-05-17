@@ -15,11 +15,14 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 import java.io.File;
+import java.io.IOException;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Random;
+import java.util.logging.FileHandler;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 import org.cfg4j.provider.ConfigurationProvider;
 import org.cfg4j.provider.ConfigurationProviderBuilder;
 import org.cfg4j.source.ConfigurationSource;
@@ -37,25 +40,26 @@ public class DecisionService extends AbstractVerticle {
 
     private Analytics analytics = null;
     private ConfigurationProvider config = null;
+    private Logger logger = null;
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         ConfigurationProvider config = null;
         ConfigFilesProvider configFilesProvider = () -> Arrays.asList(Paths.get("config.properties"));
         if (args.length <= 0) {
-             ConfigurationSource source = new ClasspathConfigurationSource(configFilesProvider);
-             config = new ConfigurationProviderBuilder()
-                .withConfigurationSource(source)
-                .build();
+            ConfigurationSource source = new ClasspathConfigurationSource(configFilesProvider);
+            config = new ConfigurationProviderBuilder()
+                    .withConfigurationSource(source)
+                    .build();
         } else {
-             ConfigurationSource source = new FilesConfigurationSource(configFilesProvider);
-             Environment environment = new ImmutableEnvironment(args[0]);
-             config = new ConfigurationProviderBuilder()
-                .withConfigurationSource(source)
-                .withEnvironment(environment)
-                .build();
-            
+            ConfigurationSource source = new FilesConfigurationSource(configFilesProvider);
+            Environment environment = new ImmutableEnvironment(args[0]);
+            config = new ConfigurationProviderBuilder()
+                    .withConfigurationSource(source)
+                    .withEnvironment(environment)
+                    .build();
+
         }
-       
+
         VertxOptions options = new VertxOptions();
         options.setMaxEventLoopExecuteTime(Long.MAX_VALUE);
         options.setWorkerPoolSize(config.getProperty("workerPoolSize", Integer.class));
@@ -65,8 +69,22 @@ public class DecisionService extends AbstractVerticle {
         vertx.deployVerticle(new DecisionService(config));
     }
 
-    public DecisionService(ConfigurationProvider config) {
-        this.analytics = new QLearningAnalytics(new Random(), config);
+    public DecisionService(ConfigurationProvider config) throws IOException {
+       
+
+        FileHandler logHandler = new FileHandler(config.getProperty("log.file", String.class),
+                config.getProperty("log.sizePerFile", Integer.class) * 1024 * 1024,
+                config.getProperty("log.maxFileCount", Integer.class), true);
+        logHandler.setFormatter(new SimpleFormatter());
+        logHandler.setLevel(Level.INFO);
+        
+        Logger rootLogger = Logger.getLogger("");
+        rootLogger.removeHandler(rootLogger.getHandlers()[0]);
+        logHandler.setLevel(Level.parse(config.getProperty("log.level",String.class)));
+        rootLogger.setLevel(Level.parse(config.getProperty("log.level",String.class)));
+        rootLogger.addHandler(logHandler);
+        logger = rootLogger;
+        this.analytics = new QLearningAnalytics(new Random(), logger,config);
         this.config = config;
     }
 
@@ -138,7 +156,7 @@ public class DecisionService extends AbstractVerticle {
                     .setStatusCode(201)
                     .putHeader("content-type", "application/json; charset=utf-8")
                     .exceptionHandler(ex -> {
-                        Logger.getLogger(DecisionService.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.log(Level.SEVERE, "Problem encountered when making decision", ex);
                     })
                     .end(Json.encodePrettily(resp));
         });
@@ -155,7 +173,7 @@ public class DecisionService extends AbstractVerticle {
             routingContext.response()
                     .setStatusCode(201)
                     .exceptionHandler(ex -> {
-                        Logger.getLogger(DecisionService.class.getName()).log(Level.SEVERE, null, ex);
+                        logger.log(Level.SEVERE, "Problem encountered when accepting feedback", ex);
                     })
                     .putHeader("content-type", "application/json; charset=utf-8")
                     .end();

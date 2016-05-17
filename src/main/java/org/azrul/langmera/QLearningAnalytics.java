@@ -15,6 +15,8 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
 import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import org.cfg4j.provider.ConfigurationProvider;
 
 /**
@@ -31,12 +33,14 @@ public class QLearningAnalytics implements Analytics {
     private String chartDesc = "Langemera: Adaptive Real-time Analytical Framework";
     private static Map<String, List<Double>> traces = new HashMap<>();
     private ConfigurationProvider config = null;
+    private Logger logger = null;
 
     //private Logger logger =null;
-    public QLearningAnalytics(Random random, ConfigurationProvider config) {
+    public QLearningAnalytics(Random random, Logger logger, ConfigurationProvider config) {
         QLearningAnalytics.random = random;
         startTime = (new Date()).getTime();
         this.config = config;
+        this.logger = logger;
     }
 
     @Override
@@ -118,91 +122,102 @@ public class QLearningAnalytics implements Analytics {
         LocalMap<Long, String> trackers = vertx.sharedData().getLocalMap("FEEDBACK_TRACKER");
 
         int feedbackCount = decisionFeedbackMap.size();
-
-        String context = decisionRequestMap.get(currentFeedback.getDecisionId()).getContext();
-        String decision = decisionResponseMap.get(currentFeedback.getDecisionId()).getDecision();
-
-        DetailDecisionFeedback detailFB = new DetailDecisionFeedback();
-        detailFB.setFeedback(currentFeedback);
-        detailFB.setContext(context);
-        detailFB.setDecision(decision);
-        decisionFeedbackMap.put(currentFeedback.getDecisionId(), detailFB);
-
-        Long trackerKey = (new Date()).getTime();
-        trackers.put(trackerKey, currentFeedback.getDecisionId());
-
-        int feedbackCountByDecision = 0;
-        List<Double> rewards = new ArrayList<>();
-        for (DetailDecisionFeedback fb : decisionFeedbackMap.values()) {
-            if (context.equals(decisionFeedbackMap.get(fb.getFeedback().getDecisionId()).getContext())
-                    && decision.equals(decisionFeedbackMap.get(fb.getFeedback().getDecisionId()).getDecision())) {
-                feedbackCountByDecision++;
-                rewards.add(fb.getFeedback().getScore());
-            }
+        boolean skipLearning = false;
+        if (decisionRequestMap.get(currentFeedback.getDecisionId()) == null) {
+            skipLearning = true;
         }
-
-        Double w = 0.0;
-        Double alpha = config.getProperty("alpha", Double.class);
-
-        //if no step parameter is configured, calculate it
-        if (alpha == null) {
-            alpha = 1.0 / (feedbackCountByDecision);
+        if (decisionResponseMap.get(currentFeedback.getDecisionId()) == null) {
+            skipLearning = true;
         }
+        if (skipLearning == false) {
+            String context = decisionRequestMap.get(currentFeedback.getDecisionId()).getContext();
+            String decision = decisionResponseMap.get(currentFeedback.getDecisionId()).getDecision();
 
-        //non-stationary q-learning
-        int i = 0;
-        for (Double ri : rewards) {
-            i++;
-            w = w + alpha * (Math.pow(1 - alpha, feedbackCountByDecision - i)) * ri;
-        }
-        Double newQ = w;
+            DetailDecisionFeedback detailFB = new DetailDecisionFeedback();
+            detailFB.setFeedback(currentFeedback);
+            detailFB.setContext(context);
+            detailFB.setDecision(decision);
+            decisionFeedbackMap.put(currentFeedback.getDecisionId(), detailFB);
 
-        //System.out.println(feedbackCount+" Q:["+context + ":" + decision+"]"+newQ);
-        //save what we learn
-        if (newQ.isInfinite() || newQ.isNaN()) {
-            //skip
-        } else {
-            String key = context + ":" + decision;
-            q.put(key, newQ);
-        }
+            Long trackerKey = (new Date()).getTime();
+            trackers.put(trackerKey, currentFeedback.getDecisionId());
 
-        //Limit the number of history taken into account - prevents memory leak
-        if (feedbackCount > config.getProperty("maxHistoryRetained", Integer.class)) {
-            Long tk = Collections.min(trackers.keySet());
-            String decisionIDWithMinTracker = trackers.get(tk);
-            decisionFeedbackMap.remove(decisionIDWithMinTracker);
-            trackers.remove(tk);
-        }
-
-        //clear cached req/resp once the feedback has come back
-        decisionRequestMap.remove(currentFeedback.getDecisionId());
-        decisionResponseMap.remove(currentFeedback.getDecisionId());
-
-        //keep traces
-        if (Boolean.TRUE.equals(config.getProperty("collect.traces", Boolean.class))) {
-            for (String contextDecision : q.keySet()) {
-                List<Double> qtrace = traces.get(contextDecision);
-                if (qtrace == null) {
-                    qtrace = new ArrayList<Double>();
-                    qtrace.add(q.get(contextDecision));
-                    traces.put(contextDecision, qtrace);
-                } else {
-                    qtrace.add(q.get(contextDecision));
+            int feedbackCountByDecision = 0;
+            List<Double> rewards = new ArrayList<>();
+            for (DetailDecisionFeedback fb : decisionFeedbackMap.values()) {
+                if (context.equals(decisionFeedbackMap.get(fb.getFeedback().getDecisionId()).getContext())
+                        && decision.equals(decisionFeedbackMap.get(fb.getFeedback().getDecisionId()).getDecision())) {
+                    feedbackCountByDecision++;
+                    rewards.add(fb.getFeedback().getScore());
                 }
             }
-        }
 
-        responseAction.run();
-        if (Boolean.TRUE.equals(currentFeedback.getTerminal())) {
-            long delta = (new Date()).getTime() - startTime;
-            System.out.println("Time taken to process " + feedbackCount + " msgs:" + delta + " ms");
-            System.out.println("Time taken per msg: " + (delta / feedbackCount) + " ms");
-            System.out.println("Msgs per s: " + ((1000.0 * (double) feedbackCount) / ((double) delta)) + " msgs");
-            if (Boolean.TRUE.equals(config.getProperty("collect.traces", Boolean.class))) {
-                final LineChart demo = new LineChart(chartDesc, traces);
-                demo.pack();
-                demo.setVisible(true);
+            Double w = 0.0;
+            Double alpha = config.getProperty("alpha", Double.class);
+
+            //if no step parameter is configured, calculate it
+            if (alpha == null) {
+                alpha = 1.0 / (feedbackCountByDecision);
             }
+
+            //non-stationary q-learning
+            int i = 0;
+            for (Double ri : rewards) {
+                i++;
+                w = w + alpha * (Math.pow(1 - alpha, feedbackCountByDecision - i)) * ri;
+            }
+            Double newQ = w;
+
+            //System.out.println(feedbackCount+" Q:["+context + ":" + decision+"]"+newQ);
+            //save what we learn
+            if (newQ.isInfinite() || newQ.isNaN()) {
+                //skip
+            } else {
+                String key = context + ":" + decision;
+                q.put(key, newQ);
+            }
+
+            //Limit the number of history taken into account - prevents memory leak
+            if (feedbackCount > config.getProperty("maxHistoryRetained", Integer.class)) {
+                Long tk = Collections.min(trackers.keySet());
+                String decisionIDWithMinTracker = trackers.get(tk);
+                decisionFeedbackMap.remove(decisionIDWithMinTracker);
+                trackers.remove(tk);
+            }
+
+            //clear cached req/resp once the feedback has come back
+            decisionRequestMap.remove(currentFeedback.getDecisionId());
+            decisionResponseMap.remove(currentFeedback.getDecisionId());
+
+            //keep traces
+            if (Boolean.TRUE.equals(config.getProperty("collect.traces", Boolean.class))) {
+                for (String contextDecision : q.keySet()) {
+                    List<Double> qtrace = traces.get(contextDecision);
+                    if (qtrace == null) {
+                        qtrace = new ArrayList<Double>();
+                        qtrace.add(q.get(contextDecision));
+                        traces.put(contextDecision, qtrace);
+                    } else {
+                        qtrace.add(q.get(contextDecision));
+                    }
+                }
+            }
+
+            responseAction.run();
+            if (Boolean.TRUE.equals(currentFeedback.getTerminal())) {
+                long delta = (new Date()).getTime() - startTime;
+                System.out.println("Time taken to process " + feedbackCount + " msgs:" + delta + " ms");
+                System.out.println("Time taken per msg: " + (delta / feedbackCount) + " ms");
+                System.out.println("Msgs per s: " + ((1000.0 * (double) feedbackCount) / ((double) delta)) + " msgs");
+                if (Boolean.TRUE.equals(config.getProperty("collect.traces", Boolean.class))) {
+                    final LineChart demo = new LineChart(chartDesc, traces);
+                    demo.pack();
+                    demo.setVisible(true);
+                }
+            }
+        }else{
+            logger.log(Level.WARNING,"Attempt to learn from a feedback with no corresponding request/response");
+            responseAction.run();
         }
 
     }
