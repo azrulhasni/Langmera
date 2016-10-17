@@ -7,6 +7,7 @@ package org.azrul.langmera;
 
 import io.vertx.core.Vertx;
 import io.vertx.core.shareddata.LocalMap;
+import java.io.Serializable;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -17,6 +18,7 @@ import java.util.Random;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.apache.commons.lang.SerializationUtils;
 import org.cfg4j.provider.ConfigurationProvider;
 
 /**
@@ -70,6 +72,7 @@ public class QLearningAnalytics implements Analytics {
             resp = new DecisionResponse();
             resp.setDecisionId(req.getDecisionId());
             resp.setDecision(decision);
+            resp.setQValue(maxVal);
             //save cache to be matched to feedback
             if (req != null) {
                 vertx.sharedData().getLocalMap("DECISION_REQUEST").put(req.getDecisionId(), req);
@@ -188,9 +191,20 @@ public class QLearningAnalytics implements Analytics {
             //clear cached req/resp once the feedback has come back
             decisionRequestMap.remove(currentFeedback.getDecisionId());
             decisionResponseMap.remove(currentFeedback.getDecisionId());
+            
+            //Get maxQ
+            Double maxQ = Double.NEGATIVE_INFINITY;
+            String decisionWithMaxQ = null;
+            for (String contextDecision : q.keySet()) {
+                if (q.get(contextDecision)>maxQ){
+                    decisionWithMaxQ =contextDecision;
+                    maxQ = q.get(contextDecision);
+                }
+            }
 
             //keep traces
             if (Boolean.TRUE.equals(config.getProperty("collect.traces", Boolean.class))) {
+                Date now = new Date();
                 for (String contextDecision : q.keySet()) {
                     List<Double> qtrace = traces.get(contextDecision);
                     if (qtrace == null) {
@@ -200,8 +214,47 @@ public class QLearningAnalytics implements Analytics {
                     } else {
                         qtrace.add(q.get(contextDecision));
                     }
+                    String[] c = contextDecision.split(":");
+                    Trace trace = new Trace(currentFeedback.getDecisionId(),c[0],q.get(contextDecision),maxQ,now,c[1], currentFeedback.getScore());
+                    vertx.eventBus().publish("SAVE_TRACE_TO_TRACE", SerializationUtils.serialize((Serializable) trace));
                 }
             }
+            
+//            //put in in-memory DB
+//            
+//            
+//            String[] c = decisionWithMaxQ.split(":");
+//            if (InMemoryDB.store.get(0)==null){
+//                List<Object> imContext = new ArrayList<Object>();
+//                imContext.add(c[0]);
+//                InMemoryDB.store.add(0,imContext);
+//            }else{
+//                InMemoryDB.store.get(0).add(c[0]);
+//            }
+//            
+//            if (InMemoryDB.store.get(1)==null){
+//                List<Object> imDecision = new ArrayList<Object>();
+//                imDecision.add(c[1]);
+//                InMemoryDB.store.add(1,imDecision);
+//            }else{
+//                InMemoryDB.store.get(1).add(c[1]);
+//            }
+//            
+//            if (InMemoryDB.store.get(2)==null){
+//                List<Object> imMaxQ = new ArrayList<Object>();
+//                imMaxQ.add(maxQ);
+//                InMemoryDB.store.add(2,imMaxQ);
+//            }else{
+//                InMemoryDB.store.get(2).add(maxQ);
+//            }
+//            
+//            if (InMemoryDB.store.get(3)==null){
+//                List<Object> imTime= new ArrayList<Object>();
+//                imTime.add(new Date());
+//                InMemoryDB.store.add(3,imTime);
+//            }else{
+//                InMemoryDB.store.get(3).add(new Date());
+//            }
 
             responseAction.run();
             if (Boolean.TRUE.equals(currentFeedback.getTerminal())) {
@@ -209,7 +262,8 @@ public class QLearningAnalytics implements Analytics {
                 System.out.println("Time taken to process " + feedbackCount + " msgs:" + delta + " ms");
                 System.out.println("Time taken per msg: " + (delta / feedbackCount) + " ms");
                 System.out.println("Msgs per s: " + ((1000.0 * (double) feedbackCount) / ((double) delta)) + " msgs");
-                if (Boolean.TRUE.equals(config.getProperty("collect.traces", Boolean.class))) {
+                if (Boolean.TRUE.equals(config.getProperty("collect.traces", Boolean.class)) &&
+                    Boolean.TRUE.equals(config.getProperty("display.desktop.chart", Boolean.class))     ) {
                     final LineChart demo = new LineChart(chartDesc, traces);
                     demo.pack();
                     demo.setVisible(true);

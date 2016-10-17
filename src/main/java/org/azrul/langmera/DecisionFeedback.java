@@ -6,13 +6,14 @@
 package org.azrul.langmera;
 
 import io.vertx.core.shareddata.Shareable;
+import java.io.Serializable;
 import java.util.Objects;
 
 /**
  *
  * @author Azrul
  */
-public class DecisionFeedback implements Shareable {
+public class DecisionFeedback implements Shareable, Serializable {
     private String decisionId;
     private Double score;
     private Boolean terminal;

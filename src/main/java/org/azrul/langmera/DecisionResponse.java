@@ -6,15 +6,17 @@
 package org.azrul.langmera;
 
 import io.vertx.core.shareddata.Shareable;
+import java.io.Serializable;
 import java.util.Objects;
 
 /**
  *
  * @author Azrul
  */
-public class DecisionResponse implements Shareable {
+public class DecisionResponse implements Shareable, Serializable {
     private String decisionId;
     private String decision;
+    private Double qValue;
     
         @Override
     public int hashCode() {
@@ -57,5 +59,13 @@ public class DecisionResponse implements Shareable {
 
     public void setDecision(String decision) {
         this.decision = decision;
+    }
+
+    public Double getQValue() {
+        return qValue;
+    }
+
+    public void setQValue(Double qValue) {
+        this.qValue = qValue;
     }
 }

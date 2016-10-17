@@ -6,12 +6,13 @@
 package org.azrul.langmera;
 
 import io.vertx.core.shareddata.Shareable;
+import java.io.Serializable;
 
 /**
  *
  * @author Azrul
  */
-public class DetailDecisionFeedback implements Shareable {
+public class DetailDecisionFeedback implements Shareable, Serializable {
     private DecisionFeedback feedback;
     private String context;
     private String decision;

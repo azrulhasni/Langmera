@@ -6,6 +6,7 @@
 package org.azrul.langmera;
 
 import io.vertx.core.shareddata.Shareable;
+import java.io.Serializable;
 import java.util.Map;
 import java.util.Objects;
 
@@ -13,7 +14,7 @@ import java.util.Objects;
  *
  * @author Azrul
  */
-public class DecisionRequest implements Shareable{
+public class DecisionRequest implements Shareable, Serializable{
     private String decisionId;
     private String context;
     private String[] options;
