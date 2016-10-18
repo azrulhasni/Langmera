@@ -91,13 +91,29 @@ public class SaveToDB extends AbstractVerticle {
                    
                      //System.out.println("SQL:"+sql);
                    
+                   
                     connection.execute(sql,  res2 -> {
                        if (res2.failed()){
                           logger.log(Level.SEVERE, "Problem encountered when saving to DB", res2.cause());
                        }
                        connection.close();
                     });
-                      
+                    
+//                    connection.setAutoCommit(false, 
+//                            res3->connection.updateWithParams(sql, input, res2 -> {
+//                                if (res2.failed()){
+//                                    connection.rollback(res5->{ 
+//                                        logger.log(Level.SEVERE, "Problem encountered when saving to DB", res2.cause());
+//                                    });
+//                                  
+//                                }else{
+//                                    connection.commit(res4->{
+//                                        connection.close();
+//                                    });
+//                                }
+//                                
+//                    }));
+                    
                       
                 }
             });

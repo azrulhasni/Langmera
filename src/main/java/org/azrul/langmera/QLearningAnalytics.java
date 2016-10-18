@@ -273,6 +273,11 @@ public class QLearningAnalytics implements Analytics {
             logger.log(Level.WARNING,"Attempt to learn from a feedback with no corresponding request/response");
             responseAction.run();
         }
+//
+//select qmovies,qsports,qconcerts from 
+//	(select t1.qvalue as qsports,t1.decisionid from trace t1 where t1.decision='SPORTS' order by t1.decisiontime) as A1 
+//	join (select t2.qvalue as qmovies,t2.decisionid from trace t2 where t2.decision='MOVIES' order by t2.decisiontime) as A2 on A1.decisionid = A2.decisionid
+//	join (select t3.qvalue as qconcerts,t3.decisionid from trace t3 where t3.decision='CONCERTS' order by t3.decisiontime) as A3 on A1.decisionid = A3.decisionid
 
     }
 }
